@@ -1,0 +1,403 @@
+openapi: 3.0.0
+info:
+  title: ExamGen API
+  description: API REST para el sistema de generación de exámenes de respuesta combinada
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000/api
+    description: Desarrollo local
+  - url: https://examgen-api.onrender.com/api
+    description: Producción (Render)
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    User:
+      type: object
+      properties:
+        _id:   { type: string }
+        name:  { type: string }
+        email: { type: string }
+        role:  { type: string, enum: [teacher, student] }
+    Question:
+      type: object
+      properties:
+        _id:           { type: string }
+        statement:     { type: string }
+        type:          { type: string, enum: [multiple_choice, combined] }
+        options:       { type: array, items: { type: string } }
+        correctAnswer: { type: array, items: { type: string } }
+        category:      { type: string }
+        difficulty:    { type: integer, minimum: 1, maximum: 5 }
+        tags:          { type: array, items: { type: string } }
+    Exam:
+      type: object
+      properties:
+        _id:          { type: string }
+        title:        { type: string }
+        description:  { type: string }
+        code:         { type: string }
+        status:       { type: string, enum: [draft, published, closed] }
+        timeLimitMin: { type: integer }
+        questionIds:  { type: array, items: { type: string } }
+    ErrorResponse:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        error:   { type: string }
+        code:    { type: string }
+
+paths:
+  # ── AUTH ────────────────────────────────────────────────────────────────────
+  /auth/register:
+    post:
+      tags: [Auth]
+      summary: Registrar nuevo usuario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name:     { type: string, example: Rafa Márquez }
+                email:    { type: string, example: rafa@mail.com }
+                password: { type: string, minLength: 8, example: "password123" }
+                role:     { type: string, enum: [teacher, student], example: teacher }
+      responses:
+        "201":
+          description: Usuario creado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      user:  { $ref: '#/components/schemas/User' }
+        "400":
+          description: Datos inválidos o correo duplicado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Iniciar sesión
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:    { type: string, example: rafa@mail.com }
+                password: { type: string, example: "password123" }
+      responses:
+        "200":
+          description: Login exitoso, retorna JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data:
+                    type: object
+                    properties:
+                      token: { type: string }
+                      user:  { $ref: '#/components/schemas/User' }
+        "401":
+          description: Credenciales incorrectas
+
+  /auth/me:
+    get:
+      tags: [Auth]
+      summary: Obtener usuario autenticado
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: Datos del usuario actual
+
+  # ── QUESTIONS ───────────────────────────────────────────────────────────────
+  /questions:
+    get:
+      tags: [Questions]
+      summary: Listar preguntas con filtros y paginación
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer, default: 1 }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 10 }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: difficulty
+          schema: { type: integer, minimum: 1, maximum: 5 }
+        - in: query
+          name: mine
+          schema: { type: boolean }
+          description: Si es true, solo devuelve las preguntas del profesor autenticado
+      responses:
+        "200":
+          description: Lista paginada de preguntas
+
+    post:
+      tags: [Questions]
+      summary: Crear pregunta (solo profesores)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [statement, options, correctAnswer]
+              properties:
+                statement:     { type: string }
+                type:          { type: string, enum: [multiple_choice, combined] }
+                options:       { type: array, items: { type: string }, minItems: 2 }
+                correctAnswer: { type: array, items: { type: string }, minItems: 1 }
+                category:      { type: string }
+                difficulty:    { type: integer }
+                tags:          { type: array, items: { type: string } }
+      responses:
+        "201": { description: Pregunta creada }
+        "400": { description: Datos inválidos }
+        "403": { description: No autorizado }
+
+  /questions/{id}:
+    get:
+      tags: [Questions]
+      summary: Obtener pregunta por ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Pregunta encontrada }
+        "404": { description: No encontrada }
+    patch:
+      tags: [Questions]
+      summary: Actualizar pregunta (solo el profesor dueño)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Question' }
+      responses:
+        "200": { description: Pregunta actualizada }
+    delete:
+      tags: [Questions]
+      summary: Eliminar pregunta
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Pregunta eliminada }
+
+  # ── EXAMS ────────────────────────────────────────────────────────────────────
+  /exams:
+    get:
+      tags: [Exams]
+      summary: Listar exámenes con filtros y paginación
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: query
+          name: page
+          schema: { type: integer }
+        - in: query
+          name: limit
+          schema: { type: integer }
+        - in: query
+          name: status
+          schema: { type: string, enum: [draft, published, closed] }
+        - in: query
+          name: mine
+          schema: { type: boolean }
+      responses:
+        "200": { description: Lista paginada de exámenes }
+    post:
+      tags: [Exams]
+      summary: Crear examen (solo profesores)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, questionIds]
+              properties:
+                title:        { type: string }
+                description:  { type: string }
+                questionIds:  { type: array, items: { type: string }, minItems: 1 }
+                timeLimitMin: { type: integer }
+                status:       { type: string, enum: [draft, published] }
+      responses:
+        "201": { description: Examen creado con código generado automáticamente }
+
+  /exams/code/{code}:
+    get:
+      tags: [Exams]
+      summary: Buscar examen por código (alumno)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Examen encontrado }
+        "404": { description: Código no válido }
+
+  /exams/join/{code}:
+    post:
+      tags: [Exams]
+      summary: Alumno entra al examen con código
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: code
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Examen cargado, alumno registrado }
+        "409": { description: Ya completó este examen }
+
+  /exams/{id}:
+    get:
+      tags: [Exams]
+      summary: Obtener examen por ID
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Examen encontrado }
+    patch:
+      tags: [Exams]
+      summary: Actualizar examen (solo el profesor dueño)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Exam' }
+      responses:
+        "200": { description: Examen actualizado }
+    delete:
+      tags: [Exams]
+      summary: Eliminar examen
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Examen eliminado }
+
+  /exams/{id}/students:
+    get:
+      tags: [Exams]
+      summary: Profesor ve alumnos activos y resultados de su examen
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Lista de alumnos y sus estados }
+
+  # ── ANSWERS ──────────────────────────────────────────────────────────────────
+  /answers:
+    post:
+      tags: [Answers]
+      summary: Alumno envía el examen
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [examId, answers]
+              properties:
+                examId:   { type: string }
+                timeTaken: { type: integer, description: Segundos usados }
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      questionId:      { type: string }
+                      selectedOptions: { type: array, items: { type: string } }
+      responses:
+        "201": { description: Resultado guardado con calificación calculada }
+        "409": { description: Ya entregó este examen }
+
+  /answers/me:
+    get:
+      tags: [Answers]
+      summary: Alumno ve todos sus resultados
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200": { description: Lista de resultados del alumno }
+
+  /answers/me/{examId}:
+    get:
+      tags: [Answers]
+      summary: Alumno ve su resultado de un examen específico
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: examId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Resultado encontrado }
+
+  /answers/exam/{examId}:
+    get:
+      tags: [Answers]
+      summary: Profesor ve todos los resultados de su examen
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - in: path
+          name: examId
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Lista de resultados con calificaciones }

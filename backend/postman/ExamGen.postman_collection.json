@@ -1,0 +1,275 @@
+{
+  "info": {
+    "name": "ExamGen API",
+    "description": "Colección completa de endpoints para ExamGen",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url",       "value": "http://localhost:3000/api" },
+    { "key": "token_teacher",  "value": "" },
+    { "key": "token_student",  "value": "" },
+    { "key": "question_id",    "value": "" },
+    { "key": "exam_id",        "value": "" },
+    { "key": "exam_code",      "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Registro — Docente",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Rafa Márquez\",\n  \"email\": \"rafa@mail.com\",\n  \"password\": \"password123\",\n  \"role\": \"teacher\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Registro — Alumno",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/register",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"María González\",\n  \"email\": \"maria@mail.com\",\n  \"password\": \"password123\",\n  \"role\": \"student\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login — Docente",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('token_teacher', pm.response.json().data.token);"] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"rafa@mail.com\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login — Alumno",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('token_student', pm.response.json().data.token);"] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"maria@mail.com\",\n  \"password\": \"password123\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /auth/me",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/auth/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Questions",
+      "item": [
+        {
+          "name": "GET /questions (con filtros y paginación)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/questions?page=1&limit=10&mine=true",
+              "host": ["{{base_url}}"],
+              "path": ["questions"],
+              "query": [
+                { "key": "page",     "value": "1" },
+                { "key": "limit",    "value": "10" },
+                { "key": "mine",     "value": "true" },
+                { "key": "category", "value": "", "disabled": true },
+                { "key": "difficulty","value": "", "disabled": true }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        },
+        {
+          "name": "POST /questions (crear)",
+          "event": [{ "listen": "test", "script": { "exec": ["pm.collectionVariables.set('question_id', pm.response.json().data._id);"] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/questions",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_teacher}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"statement\": \"¿Cuál es la derivada de f(x) = x²?\",\n  \"type\": \"multiple_choice\",\n  \"options\": [\"f'(x) = x\", \"f'(x) = 2x\", \"f'(x) = x²\", \"f'(x) = 2\"],\n  \"correctAnswer\": [\"f'(x) = 2x\"],\n  \"category\": \"Matemáticas\",\n  \"difficulty\": 3,\n  \"tags\": [\"derivadas\", \"cálculo\"]\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /questions/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/questions/{{question_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        },
+        {
+          "name": "PATCH /questions/:id",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/questions/{{question_id}}",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_teacher}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"difficulty\": 4\n}" }
+          }
+        },
+        {
+          "name": "DELETE /questions/:id",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/questions/{{question_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Exams",
+      "item": [
+        {
+          "name": "POST /exams (crear)",
+          "event": [{ "listen": "test", "script": { "exec": ["var r = pm.response.json(); pm.collectionVariables.set('exam_id', r.data._id); pm.collectionVariables.set('exam_code', r.data.code);"] } }],
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/exams",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_teacher}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Parcial 1 — Matemáticas\",\n  \"description\": \"Derivadas e integrales básicas\",\n  \"questionIds\": [\"{{question_id}}\"],\n  \"timeLimitMin\": 45,\n  \"status\": \"published\"\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /exams (con filtros)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{base_url}}/exams?mine=true&page=1&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["exams"],
+              "query": [
+                { "key": "mine",   "value": "true" },
+                { "key": "page",   "value": "1" },
+                { "key": "limit",  "value": "10" },
+                { "key": "status", "value": "", "disabled": true }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        },
+        {
+          "name": "GET /exams/code/:code (alumno busca por código)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/exams/code/{{exam_code}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_student}}" }]
+          }
+        },
+        {
+          "name": "POST /exams/join/:code (alumno entra)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/exams/join/{{exam_code}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_student}}" }]
+          }
+        },
+        {
+          "name": "GET /exams/:id/students (profesor ve alumnos)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/exams/{{exam_id}}/students",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        },
+        {
+          "name": "PATCH /exams/:id (actualizar estado)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{base_url}}/exams/{{exam_id}}",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_teacher}}" }
+            ],
+            "body": { "mode": "raw", "raw": "{\n  \"status\": \"closed\"\n}" }
+          }
+        },
+        {
+          "name": "DELETE /exams/:id",
+          "request": {
+            "method": "DELETE",
+            "url": "{{base_url}}/exams/{{exam_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Answers",
+      "item": [
+        {
+          "name": "POST /answers (alumno envía examen)",
+          "request": {
+            "method": "POST",
+            "url": "{{base_url}}/answers",
+            "header": [
+              { "key": "Content-Type",  "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token_student}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"examId\": \"{{exam_id}}\",\n  \"timeTaken\": 720,\n  \"answers\": [\n    {\n      \"questionId\": \"{{question_id}}\",\n      \"selectedOptions\": [\"f'(x) = 2x\"]\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "GET /answers/me (alumno ve sus resultados)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/answers/me",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_student}}" }]
+          }
+        },
+        {
+          "name": "GET /answers/me/:examId",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/answers/me/{{exam_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_student}}" }]
+          }
+        },
+        {
+          "name": "GET /answers/exam/:examId (profesor ve resultados)",
+          "request": {
+            "method": "GET",
+            "url": "{{base_url}}/answers/exam/{{exam_id}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token_teacher}}" }]
+          }
+        }
+      ]
+    }
+  ]
+}
