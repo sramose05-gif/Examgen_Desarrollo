@@ -11,6 +11,7 @@ const state = {
   examStartedAt: null,
   roleForRegister: 'teacher',
   currentTab: 'resumen',
+  studentHistory: [],
 };
 
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -75,8 +76,7 @@ function nav() {
       <a href="#/" class="logo" aria-label="ExamGen"><span class="logo-mark">✦</span><span>Exam</span><span>Gen</span></a>
       <div class="nav-actions">
         ${state.user ? `<div class="user-pill"><span class="user-dot"></span>${esc(state.user.name)} · ${role === 'teacher' ? 'Docente' : 'Estudiante'}</div>` : ''}
-        ${state.user?.role === 'teacher' ? `<a class="btn btn-ghost btn-sm" href="#/teacher">Panel docente</a>` : ''}
-        ${state.user?.role === 'student' ? `<a class="btn btn-ghost btn-sm" href="#/student">Panel alumno</a>` : ''}
+        ${state.user?.role === 'student' ? `<a class="btn btn-ghost btn-sm" href="#/student">Mi historial</a>` : ''}
         ${state.user ? `<button class="btn btn-danger btn-sm" data-action="logout">Cerrar sesión</button>` : `<a class="btn btn-primary btn-sm" href="#/login">Iniciar sesión</a>`}
       </div>
     </nav>`;
@@ -266,27 +266,18 @@ function renderTeacherContent() {
   if (state.currentTab === 'preguntas') return renderQuestionManager(root);
   if (state.currentTab === 'examenes') return renderExamManager(root);
   if (state.currentTab === 'resultados') return renderResultsManager(root);
+  // Removed demo and architecture informational cards per user request.
   root.innerHTML = `
     <div class="grid grid-2">
       <div class="card">
-        <h3>Arquitectura de la aplicación</h3>
-        <p>Front-end estático en Render → API REST en Render → MongoDB Atlas. La sesión se maneja con JWT y las operaciones se autorizan por rol.</p>
-        <div class="badges"><span class="badge">HTML/CSS/JS</span><span class="badge green">Express API</span><span class="badge yellow">MongoDB</span></div>
+        <h3>Resumen</h3>
+        <p class="small">Utiliza las pestañas para administrar preguntas, exámenes y resultados.</p>
       </div>
       <div class="card">
-        <h3>Demostración rápida para video</h3>
-        <p>Primero crea 2 preguntas, luego crea un examen publicado, copia el código y entra con un usuario estudiante.</p>
-        <button class="btn btn-danger" id="validation-demo">Probar validación fallida</button>
-        <p class="help">Envía una pregunta incompleta para mostrar error 400 del back-end.</p>
+        <h3>Acciones</h3>
+        <p class="small">Presiona <strong>Actualizar datos</strong> para sincronizar con la API.</p>
       </div>
     </div>`;
-  $('#validation-demo').addEventListener('click', async () => {
-    try {
-      await api('/questions', { method: 'POST', body: JSON.stringify({ statement: '', type: 'multiple_choice', options: ['A'], correctAnswer: [] }) });
-    } catch (err) {
-      toast(`Validación funcionando: ${err.status || 400}`, err.message, 'err');
-    }
-  });
 }
 
 function renderQuestionManager(root) {
@@ -344,7 +335,8 @@ function getOptionValues() {
 
 async function submitQuestionForm(e) {
   e.preventDefault();
-  const form = Object.fromEntries(new FormData(e.currentTarget).entries());
+  const formEl = e.currentTarget;
+  const form = Object.fromEntries(new FormData(formEl).entries());
   const options = getOptionValues();
   const correctAnswer = options.filter(o => o.correct).map(o => o.text);
   try {
@@ -360,8 +352,7 @@ async function submitQuestionForm(e) {
         tags: (form.tags || '').split(',').map(t => t.trim()).filter(Boolean),
       }),
     });
-    toast('Pregunta creada', 'Ya está disponible para agregarla a un examen.');
-    e.currentTarget.reset();
+    formEl.reset();
     await refreshTeacher();
   } catch (err) {
     toast('No se pudo crear la pregunta', err.message, 'err');
@@ -470,7 +461,12 @@ async function deleteExam(id) {
 }
 
 async function openStudentsModal(examId) {
-  const modal = $('#modal');
+  let modal = $('#modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'modal';
+    document.body.appendChild(modal);
+  }
   modal.className = 'modal show';
   modal.innerHTML = `<div class="modal-card"><div class="card-header"><h3>Alumnos y resultados</h3><button class="btn btn-ghost btn-sm" data-close-modal>Cerrar</button></div><div class="empty">Cargando...</div></div>`;
   $('[data-close-modal]').addEventListener('click', () => modal.classList.remove('show'));
@@ -523,6 +519,10 @@ function studentView() {
           ${state.activeExam ? examPreviewHTML() : `<div class="empty">Todavía no has buscado un examen.</div>`}
         </section>
       </div>
+      <section class="card" style="margin-top:18px">
+        <div class="card-header"><h3>Historial de exámenes</h3><span class="badge" id="history-count">—</span></div>
+        <div id="student-history"><div class="empty">Cargando historial...</div></div>
+      </section>
     </main>`);
   $('#code-form').addEventListener('submit', findExamByCode);
   $('#role-demo').addEventListener('click', async () => {
@@ -533,6 +533,45 @@ function studentView() {
     }
   });
   bindStudentExamActions();
+  loadStudentHistory();
+}
+
+async function loadStudentHistory() {
+  try {
+    const data = await api('/answers/me');
+    state.studentHistory = Array.isArray(data) ? data : (data.results || []);
+    renderStudentHistory();
+  } catch (err) {
+    const el = $('#student-history');
+    if (el) el.innerHTML = `<div class="empty">No se pudo cargar el historial.</div>`;
+  }
+}
+
+function renderStudentHistory() {
+  const el = $('#student-history');
+  const count = $('#history-count');
+  if (!el) return;
+  if (count) count.textContent = `${state.studentHistory.length} exámenes`;
+  if (!state.studentHistory.length) {
+    el.innerHTML = `<div class="empty">Aún no has completado ningún examen.</div>`;
+    return;
+  }
+  el.innerHTML = '<div class="list">' + state.studentHistory.map(r => {
+    const fecha = new Date(r.createdAt || r.submittedAt).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+    const hora  = new Date(r.createdAt || r.submittedAt).toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+    const titulo = r.examId?.title || 'Examen';
+    const scoreClass = r.score >= 70 ? 'green' : 'yellow';
+    return '<div class="item">' +
+      '<div class="item-top">' +
+        '<div>' +
+          '<div class="item-title">' + esc(titulo) + '</div>' +
+          '<div class="small muted">' + fecha + ' · ' + hora + ' · ⏱ ' + formatTime(r.timeTaken || 0) + '</div>' +
+        '</div>' +
+        '<span class="badge ' + scoreClass + '">' + r.score + '%</span>' +
+      '</div>' +
+      '<div class="small muted">' + r.correct + '/' + r.total + ' respuestas correctas</div>' +
+    '</div>';
+  }).join('') + '</div>';
 }
 
 async function findExamByCode(e) {
@@ -579,7 +618,13 @@ function renderExamSolver() {
   const exam = state.activeExam;
   const questions = exam.questionIds || [];
   $('#student-main').innerHTML = `
-    <div class="card-header"><div><h3>${esc(exam.title)}</h3><p class="small muted">Responde y envía cuando termines.</p></div><span class="badge">${questions.length} preguntas</span></div>
+    <div class="card-header">
+      <div><h3>${esc(exam.title)}</h3><p class="small muted">Responde y envía cuando termines.</p></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="badge">${questions.length} preguntas</span>
+        <span id="exam-timer" class="badge" style="font-size:1em;min-width:70px;text-align:center">⏱ --:--</span>
+      </div>
+    </div>
     <div class="progress"><div id="progress-bar"></div></div>
     <div class="grid" style="margin-top:18px">
       ${questions.map((q, index) => questionSolverHTML(q, index)).join('')}
@@ -587,6 +632,36 @@ function renderExamSolver() {
     <button class="btn btn-primary btn-wide" id="submit-exam" style="margin-top:18px">Enviar respuestas</button>`;
   bindStudentExamActions();
   updateProgress();
+  startExamTimer();
+}
+
+function startExamTimer() {
+  // Clear any previous timer
+  if (state._timerInterval) clearInterval(state._timerInterval);
+
+  const limitMs = (state.activeExam?.timeLimitMin || 30) * 60 * 1000;
+
+  function tick() {
+    const el = $('#exam-timer');
+    if (!el) { clearInterval(state._timerInterval); return; }
+    const elapsed = Date.now() - state.examStartedAt;
+    const remaining = Math.max(0, limitMs - elapsed);
+    const min = Math.floor(remaining / 60000);
+    const sec = Math.floor((remaining % 60000) / 1000);
+    el.textContent = `⏱ ${String(min).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+    if (remaining <= 60000) {
+      el.style.background = 'var(--danger, #e53e3e)';
+      el.style.color = 'white';
+    }
+    if (remaining === 0) {
+      clearInterval(state._timerInterval);
+      toast('Tiempo agotado', 'El examen se enviará automáticamente.', 'err');
+      submitExamAnswers();
+    }
+  }
+
+  tick();
+  state._timerInterval = setInterval(tick, 1000);
 }
 
 function questionSolverHTML(q, index) {
@@ -617,6 +692,7 @@ function updateProgress() {
 }
 
 async function submitExamAnswers() {
+  if (state._timerInterval) { clearInterval(state._timerInterval); state._timerInterval = null; }
   const questions = state.activeExam?.questionIds || [];
   const answers = questions.map(q => ({ questionId: q._id, selectedOptions: state.selectedAnswers[q._id] || [] }));
   const timeTaken = state.examStartedAt ? Math.round((Date.now() - state.examStartedAt) / 1000) : 0;
@@ -625,6 +701,7 @@ async function submitExamAnswers() {
     state.activeResult = result;
     renderResult(result);
     toast('Examen enviado', `Calificación: ${result.score}%`);
+    loadStudentHistory();
   } catch (err) {
     toast('No se pudo enviar', err.message, 'err');
   }
@@ -640,6 +717,7 @@ function renderResult(result) {
     <div class="breakdown">${(result.breakdown || []).map(b => `<div class="break ${b.isCorrect ? 'ok' : 'fail'}"><div class="item-title">${b.isCorrect ? '✅' : '❌'} ${esc(b.questionText)}</div><div class="small muted">Tu respuesta: ${esc((b.selectedOptions || []).join(', ') || 'Sin respuesta')}</div><div class="small success">Correcta: ${esc((b.correctAnswer || []).join(', '))}</div></div>`).join('')}</div>
     <div class="row" style="margin-top:18px"><button class="btn btn-ghost" id="back-student">Volver al inicio</button></div>`;
   $('#back-student').addEventListener('click', () => {
+    if (state._timerInterval) { clearInterval(state._timerInterval); state._timerInterval = null; }
     state.activeExam = null;
     state.activeResult = null;
     state.selectedAnswers = {};
